@@ -5,7 +5,16 @@ import routes from './routes'
 
 const app = express()
 
-app.use(cors({ origin: env.corsOrigin }))
+// CORS: allow only configured origins. If no origin (curl/server-to-server), allow it.
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true)
+      if (env.corsOrigins.includes(origin)) return callback(null, true)
+      return callback(new Error('Not allowed by CORS'))
+    },
+  })
+)
 app.use(express.json({ limit: '2mb' }))
 
 app.get('/health', (_req, res) => {
