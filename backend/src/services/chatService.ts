@@ -218,7 +218,7 @@ export async function generateChatResponse(input: ChatInput): Promise<{
         citations.push(`Video ${s.video_id}, Chunk ${s.chunk_index}`)
       })
     } else if (event.type === 'error') {
-      fullAnswer += `\n\n❌ ${event.content}`
+      fullAnswer += `\n\n${event.content}`
     }
   }
 

@@ -38,7 +38,6 @@ export interface AnalysisResponse {
   instagram: VideoAnalysis
   comparison: {
     engagementWinner: 'A' | 'B' | 'tie'
-    hookWinner: 'A' | 'B' | 'tie'
     summary: string
   }
 }

@@ -96,7 +96,7 @@ export async function indexSession(
 
     indexedSessions.add(sessionId)
     console.log(
-      `[VectorStore] ✅ Indexed ${allDocs.length} chunks in Qdrant collection "${collectionName}" (A:${docsA.length} B:${docsB.length})`
+      `[VectorStore] Indexed ${allDocs.length} chunks in Qdrant collection "${collectionName}" (A:${docsA.length} B:${docsB.length})`
     )
   } catch (err) {
     console.error('[VectorStore] Qdrant indexing error:', err)

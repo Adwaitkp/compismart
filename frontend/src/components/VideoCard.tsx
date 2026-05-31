@@ -8,7 +8,7 @@ interface VideoCardProps {
   loading?: boolean
 }
 
-// ✅ FIX 1: Use Math.floor throughout — yt-dlp returns floats for Instagram duration
+// FIX 1: Use Math.floor throughout — yt-dlp returns floats for Instagram duration
 function formatDuration(durationSeconds: number): string {
   const total = Math.floor(durationSeconds)        // 62.53 → 62
   const h = Math.floor(total / 3600)
@@ -18,7 +18,7 @@ function formatDuration(durationSeconds: number): string {
   return `${m}:${String(s).padStart(2, '0')}`      // "1:02" not "1:2.53"
 }
 
-// ✅ FIX 2: Clamp negative values — yt-dlp returns -1 when data is unavailable
+// FIX 2: Clamp negative values — yt-dlp returns -1 when data is unavailable
 function formatCompactNumber(value: number): string {
   const n = Math.max(0, value)                     // -1 → 0
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
@@ -111,10 +111,10 @@ export function VideoCard({ label, video, comparison, loading = false }: VideoCa
                 {metadata.engagementRate.toFixed(2)}%
               </div>
             </div>
-            {/* ✅ FIX 4: Guard against video being null before accessing video.videoId */}
+            {/* FIX 4: Guard against video being null before accessing video.videoId */}
             <p className="text-xs text-slate-400 text-right">
               {video && comparison?.engagementWinner === video.videoId
-                ? '🏆 Highest engagement'
+                ? 'Highest engagement'
                 : 'Compare against opposite card'}
             </p>
           </div>

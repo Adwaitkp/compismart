@@ -2,7 +2,6 @@ import { exec } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import util from 'util'
-import { env } from '../config/env'
 import type { VideoMetadata, AnalysisResponse, AnalysisChunk } from '../types'
 import { saveAnalysis, getAnalysis } from './sessionStore'
 import { indexSession } from '../rag/vectorStore'
@@ -21,11 +20,11 @@ async function getInstagramDataFromInstaloader(url: string): Promise<{ views: nu
     const { stdout } = await execPromise(`python3 "${scriptPath}" "${url}"`, { timeout: 30_000 })
     
     const data = JSON.parse(stdout.trim())
-    console.log(`[Instaloader] ✅ Got Views: ${data.views}, Followers: ${data.followers}`)
+    console.log(`[Instaloader] Got Views: ${data.views}, Followers: ${data.followers}`)
     
     return { views: data.views || 0, followers: data.followers || 0 }
   } catch (err) {
-    console.error('[Instaloader] ❌ Error fetching data:', err)
+    console.error('[Instaloader] Error fetching data:', err)
     return { views: 0, followers: 0 }
   }
 }
@@ -52,7 +51,7 @@ async function extractMetadata(url: string, source: 'youtube' | 'instagram'): Pr
 
   const data = JSON.parse(stdout)
 
-  // ✅ FIX 1: Sanitize all numbers — yt-dlp returns -1 when unavailable
+  // FIX 1: Sanitize all numbers — yt-dlp returns -1 when unavailable
   let views        = Math.max(0, data.view_count          ?? 0)
   const likes        = Math.max(0, data.like_count          ?? 0)  // -1 → 0
   const comments     = Math.max(0, data.comment_count       ?? 0)
@@ -65,20 +64,38 @@ async function extractMetadata(url: string, source: 'youtube' | 'instagram'): Pr
     followerCount = igData.followers
   }
 
-  // ✅ FIX 2: Round duration to integer seconds — yt-dlp returns floats for Instagram
+  // FIX 2: Round duration to integer seconds — yt-dlp returns floats for Instagram
   const durationSeconds = Math.round(data.duration ?? 0)
 
-  // ✅ FIX 3: Format date from "20260319" → "2026-03-19"
+  // FIX 3: Format date from "20260319" → "2026-03-19"
   const uploadDate = formatUploadDate(data.upload_date || '')
 
-  // ✅ FIX 4: Use sanitized values for engagement rate, not raw data fields
+  // FIX 4: Use sanitized values for engagement rate, not raw data fields
   const engagementRate = views > 0 ? ((likes + comments) / views) * 100 : 0
 
-  // ✅ FIX 5: Filter hashtags properly (tags can include non-hashtag items)
-  const hashtags = (data.tags || [])
-    .filter((t: string) => typeof t === 'string')
-    .filter((t: string) => t.startsWith('#'))
-    .slice(0, 15)
+  // FIX 5: Parse hashtags properly
+  let hashtags = (data.tags || [])
+    .filter((t: string) => typeof t === 'string' && t.trim() !== '')
+    .map((t: string) => (t.startsWith('#') ? t : `#${t}`))
+
+  // Instagram fallback: yt-dlp puts hashtags in the description, not the tags array
+  if (source === 'instagram' && hashtags.length === 0 && data.description) {
+    const descTags = data.description.match(/#[\w]+/g)
+    if (descTags) {
+      hashtags = descTags
+    }
+  }
+
+  // YouTube fallback: sometimes tags are in description too
+  if (source === 'youtube' && hashtags.length === 0 && data.description) {
+    const descTags = data.description.match(/#[\w]+/g)
+    if (descTags) {
+      hashtags = descTags
+    }
+  }
+
+  // Deduplicate and limit to 15
+  hashtags = [...new Set(hashtags)].slice(0, 15)
 
   return {
     title: data.title || '',
@@ -110,7 +127,7 @@ async function getTranscript(url: string, source: 'youtube' | 'instagram'): Prom
 
   try {
     const result = await Promise.race([fetchTranscript(url, source), timeout])
-    clearTimeout(timeoutId) // ✅ FIX: Stop the timer if the transcript finishes first!
+    clearTimeout(timeoutId) // FIX: Stop the timer if the transcript finishes first!
     return result
   } catch (err) {
     clearTimeout(timeoutId) // Stop timer on error too
@@ -187,10 +204,10 @@ async function transcribeWithWhisper(url: string): Promise<string> {
     const result = JSON.parse(fs.readFileSync(jsonFile, 'utf-8'))
 
     ;[tmpFile, jsonFile].forEach(f => fs.existsSync(f) && fs.unlinkSync(f))
-    console.log('[Whisper] ✅ Transcription complete!')
+    console.log('[Whisper] Transcription complete!')
     return result.segments.map((s: any) => s.text).join(' ').trim()
   } catch (err) {
-    console.error('[Whisper] ❌ Error:', err) // This will tell us exactly why it failed
+    console.error('[Whisper] Error:', err) // This will tell us exactly why it failed
     ;[tmpFile, tmpFile.replace('.mp3', '.json')].forEach(f => fs.existsSync(f) && fs.unlinkSync(f))
     throw err
   }
@@ -233,7 +250,6 @@ export async function analyzeVideos({ youtubeUrl, instagramUrl, sessionId }: {
       engagementWinner:
         youtubeMetadata.engagementRate > instagramMetadata.engagementRate ? 'A' :
         instagramMetadata.engagementRate > youtubeMetadata.engagementRate ? 'B' : 'tie',
-      hookWinner: 'tie',
       summary: `Video A: ${youtubeMetadata.engagementRate.toFixed(2)}% | Video B: ${instagramMetadata.engagementRate.toFixed(2)}%`,
     },
   }
@@ -301,7 +317,7 @@ async function extractTranscriptsInBackground(
         instagramMeta
       )
 
-      console.log(`[Analyze] ✅ Session ${sessionId} ready for AI chat`)
+      console.log(`[Analyze] Session ${sessionId} ready for AI chat`)
     }
   } catch (err) {
     console.error('[Analyze] Background transcript error:', err)

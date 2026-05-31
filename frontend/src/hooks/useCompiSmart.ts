@@ -30,14 +30,7 @@ export function useCompiSmart() {
   }, [sessionId])
 
   const suggestedQuestions = useMemo(
-    () => [
-      'Why did Video A get more engagement than Video B?',
-      'Compare hooks in the first 5 seconds.',
-      'Who is the creator of Video B?',
-      'What is the follower count of Video B?',
-      'Suggest improvements for Video B based on Video A.',
-      'Compare CTAs.',
-    ],
+    () => [],
     [],
   )
 
@@ -109,11 +102,11 @@ export function useCompiSmart() {
           })
           setCitations(sourceCitations)
         } else if (event.type === 'error') {
-          fullContent += `\n\n❌ ${event.content}`
+          fullContent += `\n\n${event.content}`
         }
       }
     } catch (err: any) {
-      fullContent += `\n\n❌ Connection error: ${err.message}`
+      fullContent += `\n\nConnection error: ${err.message}`
     }
 
     // Final update
