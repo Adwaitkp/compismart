@@ -31,7 +31,6 @@ Thumbs.db
 /tmp/
 *.mp3
 *.json3
-cookies.txt
 
 # Python
 __pycache__/
