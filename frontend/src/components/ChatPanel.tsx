@@ -43,7 +43,10 @@ export function ChatPanel({
   onSend,
 }: ChatPanelProps) {
   const submit = () => {
-    onSend(draftMessage)
+    const text = draftMessage.trim()
+    if (text) {
+      onSend(text)
+    }
   }
 
   return (

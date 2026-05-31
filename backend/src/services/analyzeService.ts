@@ -5,6 +5,7 @@ import util from 'util'
 import { env } from '../config/env'
 import type { VideoMetadata, AnalysisResponse, AnalysisChunk } from '../types'
 import { saveAnalysis, getAnalysis } from './sessionStore'
+import { indexSession } from '../rag/vectorStore'
 
 const execPromise = util.promisify(exec)
 
@@ -258,10 +259,49 @@ async function extractTranscriptsInBackground(
     if (existing) {
       existing.youtube.transcript = ytTranscript
       existing.instagram.transcript = igTranscript
-      existing.youtube.chunks   = [{ chunkId: 0, videoId: 'A', source: 'youtube',   text: ytTranscript, citations: [] }]
-      existing.instagram.chunks = [{ chunkId: 0, videoId: 'B', source: 'instagram', text: igTranscript, citations: [] }]
+
+      // ── Proper chunking (using the text splitter) ───────────
+      const { createTextSplitter } = await import('../rag/textChunker')
+      const splitter = createTextSplitter()
+
+      const ytChunks = ytTranscript
+        ? (await splitter.splitText(ytTranscript)).map((text, i) => ({
+            chunkId: i,
+            videoId: 'A' as const,
+            source: 'youtube' as const,
+            text,
+            citations: [`Video A, Chunk ${i}`],
+          }))
+        : []
+
+      const igChunks = igTranscript
+        ? (await splitter.splitText(igTranscript)).map((text, i) => ({
+            chunkId: i,
+            videoId: 'B' as const,
+            source: 'instagram' as const,
+            text,
+            citations: [`Video B, Chunk ${i}`],
+          }))
+        : []
+
+      existing.youtube.chunks = ytChunks
+      existing.instagram.chunks = igChunks
       saveAnalysis(sessionId, existing)
-      console.log('[Analyze] Transcripts saved to session', sessionId)
+
+      console.log(
+        `[Analyze] Transcripts saved to session ${sessionId} (A:${ytChunks.length} chunks, B:${igChunks.length} chunks)`
+      )
+
+      // ── Index in vector store for RAG ───────────────────────
+      await indexSession(
+        sessionId,
+        ytTranscript,
+        igTranscript,
+        youtubeMeta,
+        instagramMeta
+      )
+
+      console.log(`[Analyze] ✅ Session ${sessionId} ready for AI chat`)
     }
   } catch (err) {
     console.error('[Analyze] Background transcript error:', err)

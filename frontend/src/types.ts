@@ -48,6 +48,8 @@ export interface ChatMessage {
   content: string
   createdAt: string
   citations?: string[]
+  streaming?: boolean
+  sources?: any[]
 }
 
 export interface StreamCitationPayload {

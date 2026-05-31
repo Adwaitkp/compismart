@@ -30,6 +30,42 @@ export async function analyzeComparisons(params: AnalyzeParams): Promise<Analysi
   return response.json() as Promise<AnalysisResponse>
 }
 
+export async function* streamChat(
+  sessionId: string,
+  message: string
+): AsyncGenerator<{ type: string; content: string; sources?: any[] }> {
+  const res = await fetch(`${API_BASE}/chat/${sessionId}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message }),
+  })
+
+  if (!res.ok) throw new Error('Chat request failed')
+
+  const reader = res.body!.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() || ''
+
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        const data = line.slice(6).trim()
+        if (data === '[DONE]') return
+        try {
+          yield JSON.parse(data)
+        } catch {}
+      }
+    }
+  }
+}
+
 export async function streamChatResponse(
   params: ChatParams,
   handlers: {

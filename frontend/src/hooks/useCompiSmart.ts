@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { analyzeComparisons, streamChatResponse } from '../services/api'
+import { analyzeComparisons, streamChat } from '../services/api'
 import type { AnalysisResponse, ChatMessage } from '../types'
 
 const STORAGE_KEY = 'compismart-session-id'
@@ -65,68 +65,70 @@ export function useCompiSmart() {
   }
 
   const sendMessage = async (message: string) => {
-    const trimmedMessage = message.trim()
+    const text = message.trim()
+    if (!text || isStreaming) return
 
-    if (!trimmedMessage || isStreaming) {
-      return
-    }
-
-    setIsStreaming(true)
-    setError(null)
-
-    const now = new Date().toISOString()
-    const assistantId = `assistant-${now}`
-
-    setMessages((currentMessages) => [
-      ...currentMessages,
-      { role: 'user', content: trimmedMessage, createdAt: now },
-      { role: 'assistant', content: '', createdAt: now },
-    ])
+    // Add user message
+    setMessages((prev) => [...prev, { role: 'user', content: text, createdAt: new Date().toISOString() }])
+    // Add empty assistant message (will be filled by stream)
+    setMessages((prev) => [...prev, { role: 'assistant', content: '', streaming: true, createdAt: new Date().toISOString() }])
     setDraftMessage('')
+    setIsStreaming(true)
 
-    let assistantText = ''
+    let fullContent = ''
+    let sources: any[] = []
+    let sourceCitations: string[] = []
 
     try {
-      await streamChatResponse(
-        { message: trimmedMessage, sessionId },
-        {
-          onToken: (token) => {
-            assistantText += token
-            setMessages((currentMessages) =>
-              currentMessages.map((message) =>
-                message.role === 'assistant' && message.createdAt === now && message.content === ''
-                  ? { ...message, content: assistantText }
-                  : message,
-              ),
-            )
-          },
-          onCitations: (payload) => {
-            setCitations(payload.citations)
-            setMessages((currentMessages) =>
-              currentMessages.map((message) =>
-                message.role === 'assistant' && message.createdAt === now
-                  ? { ...message, citations: payload.citations }
-                  : message,
-              ),
-            )
-          },
-        },
-      )
-    } catch (caughtError) {
-      const fallbackMessage = caughtError instanceof Error ? caughtError.message : 'Streaming failed.'
-      setError(fallbackMessage)
-      setMessages((currentMessages) =>
-        currentMessages.map((message) =>
-          message.role === 'assistant' && message.createdAt === now
-            ? { ...message, content: fallbackMessage }
-            : message,
-        ),
-      )
-    } finally {
-      setIsStreaming(false)
+      for await (const event of streamChat(sessionId, text)) {
+        if (event.type === 'token') {
+          fullContent += event.content
+          // Update last message
+          setMessages((prev) => {
+            const updated = [...prev]
+            updated[updated.length - 1] = {
+              ...updated[updated.length - 1],
+              content: fullContent,
+            }
+            return updated
+          })
+        } else if (event.type === 'sources') {
+          sources = event.sources || []
+          // Convert sources to citations
+          sourceCitations = sources.map((s) => `Video ${s.video_id}, Chunk ${s.chunk_index}`)
+          // Attach sources and citations to last message
+          setMessages((prev) => {
+            const updated = [...prev]
+            updated[updated.length - 1] = {
+              ...updated[updated.length - 1],
+              sources,
+              citations: sourceCitations,
+              streaming: false,
+            }
+            return updated
+          })
+          setCitations(sourceCitations)
+        } else if (event.type === 'error') {
+          fullContent += `\n\n❌ ${event.content}`
+        }
+      }
+    } catch (err: any) {
+      fullContent += `\n\n❌ Connection error: ${err.message}`
     }
 
-    void assistantId
+    // Final update
+    setMessages((prev) => {
+      const updated = [...prev]
+      updated[updated.length - 1] = {
+        ...updated[updated.length - 1],
+        content: fullContent,
+        sources,
+        citations: sourceCitations,
+        streaming: false,
+      }
+      return updated
+    })
+    setIsStreaming(false)
   }
 
   return {
