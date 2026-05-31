@@ -10,7 +10,8 @@ RUN apt-get update && apt-get install -y \
 # Install Python tools required by the project
 RUN pip3 install --break-system-packages \
     yt-dlp \
-    instaloader
+    instaloader \
+    openai-whisper
 
 # Set working directory
 WORKDIR /app
@@ -28,7 +29,7 @@ COPY . .
 RUN npm run build
 
 # Expose application port
-EXPOSE 10000
+EXPOSE 5000
 
 # Start application
 CMD ["npm", "start"]

@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express'
 import type { ChatRequestBody } from '../types'
-import { generateChatResponse } from '../services/chatService'
+import { streamChat } from '../services/chatService'
 
 export async function chatController(req: Request, res: Response): Promise<void> {
   const { message, sessionId } = req.body as ChatRequestBody
@@ -20,11 +20,17 @@ export async function chatController(req: Request, res: Response): Promise<void>
   res.flushHeaders?.()
 
   try {
-    const response = await generateChatResponse({ message, sessionId }, (token) => {
-      res.write(`data: ${JSON.stringify({ type: 'token', value: token })}\n\n`)
-    })
+    for await (const event of streamChat({ message, sessionId })) {
+      if (event.type === 'token') {
+        res.write(`data: ${JSON.stringify({ type: 'token', value: event.content })}\n\n`)
+        continue
+      }
 
-    res.write(`data: ${JSON.stringify({ type: 'citations', value: response.citations, chunks: response.chunks })}\n\n`)
+      if (event.type === 'sources') {
+        res.write(`data: ${JSON.stringify({ type: 'citations', value: event.sources ?? [] })}\n\n`)
+      }
+    }
+
     res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`)
     res.end()
   } catch {

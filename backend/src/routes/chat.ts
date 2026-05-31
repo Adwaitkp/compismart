@@ -3,7 +3,7 @@ import { streamChat } from '../services/chatService'
 
 const router = Router()
 
-router.post('/:sessionId', async (req: Request, res: Response) => {
+router.post('/:sessionId', async (req: Request<{ sessionId: string }>, res: Response) => {
   const { sessionId } = req.params
   const { message } = req.body
 
