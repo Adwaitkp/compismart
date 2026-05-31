@@ -7,14 +7,19 @@ RUN apt-get update && apt-get install -y \
     ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python tools
-RUN pip3 install --break-system-packages yt-dlp instaloader
+# Install Python tools required by the project
+RUN pip3 install --break-system-packages \
+    yt-dlp \
+    instaloader
 
+# Set working directory
 WORKDIR /app
 
-# Install Node dependencies
+# Copy package files first for Docker layer caching
 COPY package*.json ./
-RUN npm install
+
+# Install Node dependencies
+RUN npm install --legacy-peer-deps
 
 # Copy source code
 COPY . .
@@ -22,6 +27,8 @@ COPY . .
 # Build TypeScript
 RUN npm run build
 
+# Expose application port
 EXPOSE 10000
 
+# Start application
 CMD ["npm", "start"]
