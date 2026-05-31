@@ -1,6 +1,10 @@
 import type { AnalysisResponse, StreamCitationPayload } from '../types'
 
-const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:5000/api'
+// Local backend
+//const API_BASE = 'http://localhost:5000/api'
+
+// Render backend
+const API_BASE = 'https://compismart-a1dp.onrender.com/api'
 
 interface AnalyzeParams {
   youtubeUrl: string
