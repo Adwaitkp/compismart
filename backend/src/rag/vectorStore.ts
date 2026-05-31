@@ -6,7 +6,11 @@ import { Document } from '@langchain/core/documents'
 import { env } from '../config/env'
 
 // ── Qdrant Client Setup ──────────────────────────────────────────
-const client = new QdrantClient({ url: env.qdrantUrl || 'http://localhost:6333' })
+// Support local Docker Qdrant (no API key) and Qdrant Cloud (requires API key + URL)
+const clientOptions: any = { url: env.qdrantUrl || 'http://localhost:6333' }
+if (env.qdrantApiKey) clientOptions.apiKey = env.qdrantApiKey
+const client = new QdrantClient(clientOptions)
+console.log(`[VectorStore] Using Qdrant at ${clientOptions.url} (apiKey=${env.qdrantApiKey ? '***' : 'none'})`)
 
 // ── Local HuggingFace Embeddings (runs on CPU, completely free) ──
 const embeddings = new HuggingFaceTransformersEmbeddings({
