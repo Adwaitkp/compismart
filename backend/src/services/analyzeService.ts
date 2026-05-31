@@ -170,9 +170,9 @@ async function fetchTranscript(url: string, source: 'youtube' | 'instagram'): Pr
         console.warn('[YouTube] Auto-subs failed:', err)
       }
 
-      // No subtitles available
-      console.warn('[YouTube] No transcript available for this video')
-      return ''
+      // No subtitles available — fall back to Whisper
+      console.warn('[YouTube] Auto-subs failed. Falling back to Whisper transcription...')
+      return await transcribeWithWhisper(url)
     }
 
     // Instagram — check if whisper is available first
@@ -192,7 +192,7 @@ async function fetchTranscript(url: string, source: 'youtube' | 'instagram'): Pr
 async function transcribeWithWhisper(url: string): Promise<string> {
   const tmpFile = `/tmp/audio_${Date.now()}.mp3`
   try {
-    console.log('[Whisper] Downloading Instagram audio...')
+    console.log('[Whisper] Downloading audio...')
     const cookiesPath = path.resolve(process.cwd(), 'cookies.txt')
     await execPromise(`yt-dlp -x --audio-format mp3 --js-runtimes node --remote-components ejs:github --cookies "${cookiesPath}" -o "${tmpFile}" "${url}"`, { timeout: 120_000 })
     
