@@ -30,7 +30,23 @@ async function getInstagramDataFromInstaloader(url: string): Promise<{ views: nu
 }
 
 async function extractMetadata(url: string, source: 'youtube' | 'instagram'): Promise<VideoMetadata> {
-  const command = `yt-dlp --dump-json --no-playlist --skip-download --js-runtimes node --remote-components ejs:github "${url}"`
+  const cookiePath = path.resolve(process.cwd(), 'cookies.txt')
+  const commandArgs = [
+    'yt-dlp',
+    url,
+    '--cookies', cookiePath,
+    '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+    '-j',
+    '--no-download',
+    '--no-check-certificates',
+    '--no-warnings',
+  ]
+
+  if (source === 'youtube') {
+    commandArgs.splice(4, 0, '--extractor-args', 'youtube:player_client=web')
+  }
+
+  const command = commandArgs.map(arg => `"${arg}"`).join(' ')
 
   let stdout: string
   let stderr: string
