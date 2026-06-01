@@ -4,7 +4,7 @@ import type { AnalysisResponse, StreamCitationPayload } from '../types'
 //const API_BASE = 'http://localhost:5000/api'
 
 // Render backend
-const API_BASE = 'compismart-production.up.railway.app/api'
+const API_BASE = 'https://compismart-production.up.railway.app/api'
 
 interface AnalyzeParams {
   youtubeUrl: string
