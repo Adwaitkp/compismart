@@ -11,7 +11,7 @@ export const env = {
   port: Number(process.env.PORT ?? 4000),
   corsOrigins: parseList([
     'http://localhost:5173',
-    'https://comparesmart.onrender.com',
+    'compismart-production.up.railway.app',
   ], process.env.CORS_ORIGINS),
   geminiApiKey: process.env.GEMINI_API_KEY ?? '',
   qdrantUrl: process.env.QDRANT_URL ?? 'http://localhost:6333',
