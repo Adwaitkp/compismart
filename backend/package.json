@@ -19,6 +19,7 @@
     "typescript": "^6.0.3"
   },
   "dependencies": {
+    "@deepgram/sdk": "^5.3.0",
     "@google/generative-ai": "^0.24.1",
     "@huggingface/transformers": "^4.2.0",
     "@langchain/community": "^1.1.29",
@@ -28,6 +29,8 @@
     "@qdrant/js-client-rest": "^1.18.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "googleapis": "^173.0.0",
+    "youtubei.js": "^17.0.1"
   }
 }

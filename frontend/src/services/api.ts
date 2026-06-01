@@ -1,10 +1,10 @@
 import type { AnalysisResponse, StreamCitationPayload } from '../types'
 
 // Local backend
-//const API_BASE = 'http://localhost:5000/api'
+const API_BASE = 'http://localhost:5000/api'
 
 // Render backend
-const API_BASE = 'https://compismart-a1dp.onrender.com/api'
+//const API_BASE = 'https://compismart-a1dp.onrender.com/api'
 
 interface AnalyzeParams {
   youtubeUrl: string

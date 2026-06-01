@@ -17,4 +17,6 @@ export const env = {
   qdrantUrl: process.env.QDRANT_URL ?? 'http://localhost:6333',
   qdrantApiKey: process.env.QDRANT_API_KEY ?? '',
   nodeEnv: process.env.NODE_ENV ?? 'development',
+  deepgramApiKey: process.env.DEEPGRAM_API_KEY || '',
+  youtubeApiKey: process.env.YOUTUBE_API_KEY || '',
 } as const

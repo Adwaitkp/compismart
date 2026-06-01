@@ -2,17 +2,42 @@ import { exec } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import util from 'util'
+import { google } from 'googleapis'
+import { Innertube } from 'youtubei.js'
+import { DeepgramClient } from '@deepgram/sdk'
 import type { VideoMetadata, AnalysisResponse, AnalysisChunk } from '../types'
+import { env } from '../config/env'
 import { saveAnalysis, getAnalysis } from './sessionStore'
 import { indexSession } from '../rag/vectorStore'
 
 const execPromise = util.promisify(exec)
 
-// Format "20260319" → "2026-03-19"
+// ── Helper Functions ──────────────────────────────────────────────
+
+// Extract YouTube Video ID from URL
+function getYouTubeId(url: string): string | null {
+  const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/))([^&?/]+)/)
+  return match ? match[1] : null
+}
+
+// Convert YouTube API duration "PT1M30S" to seconds
+function parseDuration(iso: string): number {
+  if (!iso) return 0
+  const match = iso.match(/PT(\d+H)?(\d+M)?(\d+S)?/)
+  if (!match) return 0
+  const hours = parseInt(match[1] || '0') || 0
+  const minutes = parseInt(match[2] || '0') || 0
+  const seconds = parseInt(match[3] || '0') || 0
+  return hours * 3600 + minutes * 60 + seconds
+}
+
+// Format "20260319" → "2026-03-19" (for Instagram)
 function formatUploadDate(raw: string): string {
   if (!raw || raw.length !== 8) return raw || 'Unknown'
   return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)}`
 }
+
+// ── Instagram Metadata (Using yt-dlp + Instaloader) ──────────────
 
 async function getInstagramDataFromInstaloader(url: string): Promise<{ views: number; followers: number }> {
   try {
@@ -20,16 +45,65 @@ async function getInstagramDataFromInstaloader(url: string): Promise<{ views: nu
     const { stdout } = await execPromise(`python3 "${scriptPath}" "${url}"`, { timeout: 30_000 })
     
     const data = JSON.parse(stdout.trim())
-    console.log(`[Instaloader] Got Views: ${data.views}, Followers: ${data.followers}`)
+    console.log(`[Instaloader]  Got Views: ${data.views}, Followers: ${data.followers}`)
     
     return { views: data.views || 0, followers: data.followers || 0 }
   } catch (err) {
-    console.error('[Instaloader] Error fetching data:', err)
+    console.error('[Instaloader]  Error fetching data:', err)
     return { views: 0, followers: 0 }
   }
 }
 
+// ── Extract Metadata ──────────────────────────────────────────────
+
 async function extractMetadata(url: string, source: 'youtube' | 'instagram'): Promise<VideoMetadata> {
+  if (source === 'youtube') {
+    // ── OFFICIAL YOUTUBE API (No yt-dlp, never gets blocked) ──────
+    const videoId = getYouTubeId(url)
+    if (!videoId) throw new Error('Invalid YouTube URL')
+
+    const youtube = google.youtube({ version: 'v3', auth: env.youtubeApiKey })
+
+    // Fetch Video Stats & Snippet
+    const videoResponse = await youtube.videos.list({
+      id: [videoId],
+      part: ['snippet', 'statistics', 'contentDetails'],
+    })
+
+    const videoData = videoResponse.data.items?.[0]
+    if (!videoData) throw new Error('YouTube video not found or is private.')
+
+    // Fetch Channel Stats (for follower count)
+    const channelResponse = await youtube.channels.list({
+      id: videoData.snippet?.channelId ? [videoData.snippet.channelId] : [],
+      part: ['statistics'],
+    })
+    const channelData = channelResponse.data.items?.[0]
+
+    const views = Number(videoData.statistics?.viewCount || 0)
+    const likes = Number(videoData.statistics?.likeCount || 0)
+    const comments = Number(videoData.statistics?.commentCount || 0)
+    const followerCount = Number(channelData?.statistics?.subscriberCount || 0)
+    const engagementRate = views > 0 ? ((likes + comments) / views) * 100 : 0
+
+    return {
+      title: videoData.snippet?.title || '',
+      creatorName: videoData.snippet?.channelTitle || '',
+      views,
+      likes,
+      comments,
+      followerCount,
+      uploadDate: videoData.snippet?.publishedAt || '',
+      durationSeconds: parseDuration(videoData.contentDetails?.duration || 'PT0S'),
+      hashtags: (videoData.snippet?.tags || []).slice(0, 15).map(t => t.startsWith('#') ? t : `#${t}`),
+      engagementRate,
+      thumbnailUrl: videoData.snippet?.thumbnails?.maxres?.url || videoData.snippet?.thumbnails?.high?.url || '',
+      url,
+      source: 'youtube',
+    }
+  }
+
+  // ── INSTAGRAM (Keep yt-dlp + Instaloader) ──────────────────────
   const cookiePath = path.resolve(process.cwd(), 'cookies.txt')
   const commandArgs = [
     'yt-dlp',
@@ -42,75 +116,48 @@ async function extractMetadata(url: string, source: 'youtube' | 'instagram'): Pr
     '--no-warnings',
   ]
 
-  if (source === 'youtube') {
-    commandArgs.splice(4, 0, '--extractor-args', 'youtube:player_client=web')
-  }
-
   const command = commandArgs.map(arg => `"${arg}"`).join(' ')
 
   let stdout: string
   let stderr: string
 
   try {
-    const result = await execPromise(command, { maxBuffer: 1024 * 1024 * 10 }) // 10MB buffer
+    const result = await execPromise(command, { maxBuffer: 1024 * 1024 * 10 })
     stdout = result.stdout
     stderr = result.stderr
   } catch (error: any) {
-    console.error(`[yt-dlp error] ${source}:`, error.stderr || error.message)
-    throw new Error(`yt-dlp failed for ${source}: ${error.stderr || error.message}`)
+    console.error(`[yt-dlp error] instagram:`, error.stderr || error.message)
+    throw new Error(`yt-dlp failed for instagram: ${error.stderr || error.message}`)
   }
 
   if (!stdout || stdout.trim() === '') {
-    console.error(`[yt-dlp] Empty stdout. stderr was:`, stderr)
-    throw new Error(`yt-dlp returned no data for ${source}. URL may be private or invalid.`)
+    throw new Error(`yt-dlp returned no data for instagram. URL may be private or invalid.`)
   }
 
   const data = JSON.parse(stdout)
 
-  // FIX 1: Sanitize all numbers — yt-dlp returns -1 when unavailable
   let views        = Math.max(0, data.view_count          ?? 0)
-  const likes        = Math.max(0, data.like_count          ?? 0)  // -1 → 0
+  const likes        = Math.max(0, data.like_count          ?? 0)
   const comments     = Math.max(0, data.comment_count       ?? 0)
   let followerCount = Math.max(0, data.channel_follower_count ?? 0)
 
-  // If it's Instagram, overwrite the null yt-dlp data with Instaloader data
-  if (source === 'instagram') {
-    const igData = await getInstagramDataFromInstaloader(url)
-    views = igData.views
-    followerCount = igData.followers
-  }
+  const igData = await getInstagramDataFromInstaloader(url)
+  views = igData.views
+  followerCount = igData.followers
 
-  // FIX 2: Round duration to integer seconds — yt-dlp returns floats for Instagram
   const durationSeconds = Math.round(data.duration ?? 0)
-
-  // FIX 3: Format date from "20260319" → "2026-03-19"
   const uploadDate = formatUploadDate(data.upload_date || '')
-
-  // FIX 4: Use sanitized values for engagement rate, not raw data fields
   const engagementRate = views > 0 ? ((likes + comments) / views) * 100 : 0
 
-  // FIX 5: Parse hashtags properly
   let hashtags = (data.tags || [])
     .filter((t: string) => typeof t === 'string' && t.trim() !== '')
     .map((t: string) => (t.startsWith('#') ? t : `#${t}`))
 
-  // Instagram fallback: yt-dlp puts hashtags in the description, not the tags array
-  if (source === 'instagram' && hashtags.length === 0 && data.description) {
+  if (hashtags.length === 0 && data.description) {
     const descTags = data.description.match(/#[\w]+/g)
-    if (descTags) {
-      hashtags = descTags
-    }
+    if (descTags) hashtags = descTags
   }
 
-  // YouTube fallback: sometimes tags are in description too
-  if (source === 'youtube' && hashtags.length === 0 && data.description) {
-    const descTags = data.description.match(/#[\w]+/g)
-    if (descTags) {
-      hashtags = descTags
-    }
-  }
-
-  // Deduplicate and limit to 15
   hashtags = [...new Set(hashtags)].slice(0, 15)
 
   return {
@@ -126,14 +173,89 @@ async function extractMetadata(url: string, source: 'youtube' | 'instagram'): Pr
     engagementRate,
     thumbnailUrl: data.thumbnail || '',
     url,
-    source,
+    source: 'instagram',
+  }
+}
+
+// ── Transcription (Deepgram for Instagram, youtubei.js for YT) ────
+
+async function transcribeWithDeepgram(url: string): Promise<string> {
+  const tmpFile = `/tmp/audio_${Date.now()}.mp3`
+  try {
+    console.log('[Deepgram] Downloading Instagram audio...')
+    const cookiesPath = path.resolve(process.cwd(), 'cookies.txt')
+    await execPromise(
+      `yt-dlp -x --audio-format mp3 --js-runtimes node --remote-components ejs:github --cookies "${cookiesPath}" -o "${tmpFile}" "${url}"`,
+      { timeout: 120_000 }
+    )
+
+    console.log('[Deepgram] Audio downloaded. Sending to Deepgram API...')
+    const deepgram = new DeepgramClient({ apiKey: env.deepgramApiKey })
+
+    const result = await deepgram.listen.v1.media.transcribeFile(
+      fs.createReadStream(tmpFile),
+      {
+        model: 'nova-2',
+        smart_format: true,
+        language: 'en',
+      }
+    )
+
+    const transcript = 'results' in result
+      ? result.results?.channels?.[0]?.alternatives?.[0]?.transcript || ''
+      : ''
+    console.log('[Deepgram]  Transcription complete!')
+    return transcript
+  } catch (err) {
+    console.error('[Deepgram] Error:', err)
+    throw err
+  } finally {
+    if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile)
+  }
+}
+
+async function fetchTranscript(url: string, source: 'youtube' | 'instagram'): Promise<string> {
+  try {
+    if (source === 'youtube') {
+      // ── YOUTUBEI.JS (Native JS, no yt-dlp bot blocks) ───────────
+      console.log('[YouTube] Fetching transcript natively via youtubei.js...')
+      const videoId = getYouTubeId(url)
+      if (!videoId) return ''
+
+      try {
+        const youtube = await Innertube.create()
+        const video = await youtube.getInfo(videoId)
+        const transcriptData = await video.getTranscript()
+
+        const text = transcriptData.transcript.content.body.initial_segments
+          .map((seg: any) => seg.snippet.text)
+          .join(' ')
+          .trim()
+
+        if (text) {
+          console.log(`[YouTube] Got transcript natively (${text.length} chars)`)
+          return text
+        }
+      } catch (err) {
+        console.warn('[YouTube] Native transcript failed or not available:', err)
+      }
+
+      // Return empty instead of falling back to yt-dlp/Deepgram to avoid IP bans
+      console.warn('[YouTube] No transcript available for this video.')
+      return ''
+    }
+
+    // ── INSTAGRAM (Deepgram) ──────────────────────────────────────
+    return await transcribeWithDeepgram(url)
+  } catch (error) {
+    console.error(`[${source}] Transcript error:`, error)
+    return ''
   }
 }
 
 async function getTranscript(url: string, source: 'youtube' | 'instagram'): Promise<string> {
   let timeoutId: NodeJS.Timeout
   
-  // Wrap everything in a 180s timeout
   const timeout = new Promise<string>((resolve) => {
     timeoutId = setTimeout(() => {
       console.warn(`[${source}] Transcript timed out after 180s, skipping`)
@@ -143,91 +265,15 @@ async function getTranscript(url: string, source: 'youtube' | 'instagram'): Prom
 
   try {
     const result = await Promise.race([fetchTranscript(url, source), timeout])
-    clearTimeout(timeoutId) // FIX: Stop the timer if the transcript finishes first!
+    clearTimeout(timeoutId)
     return result
   } catch (err) {
-    clearTimeout(timeoutId) // Stop timer on error too
+    clearTimeout(timeoutId)
     return ''
   }
 }
 
-async function fetchTranscript(url: string, source: 'youtube' | 'instagram'): Promise<string> {
-  try {
-    if (source === 'youtube') {
-      // Use yt-dlp auto-subtitles — fastest, no download needed
-      const outPath = `/tmp/transcript_${Date.now()}`
-
-      try {
-        const cookiesPath = path.resolve(process.cwd(), 'cookies.txt')
-        await execPromise(
-          `yt-dlp --write-auto-subs --sub-lang en --sub-format json3 --skip-download --no-playlist --js-runtimes node --remote-components ejs:github --cookies "${cookiesPath}" -o "${outPath}" "${url}"`,
-          { timeout: 20_000 }
-        )
-
-        // yt-dlp appends .en.json3 to the output path
-        const subtitleFile = `${outPath}.en.json3`
-        if (fs.existsSync(subtitleFile)) {
-          const raw = JSON.parse(fs.readFileSync(subtitleFile, 'utf-8'))
-          fs.unlinkSync(subtitleFile)
-
-          const text = (raw.events || [])
-            .filter((e: any) => e.segs)
-            .flatMap((e: any) => e.segs)
-            .map((s: any) => (s.utf8 || '').replace(/\n/g, ' '))
-            .join('')
-            .trim()
-
-          if (text) {
-            console.log(`[YouTube] Got transcript via auto-subs (${text.length} chars)`)
-            return text
-          }
-        }
-      } catch (err) {
-        console.warn('[YouTube] Auto-subs failed:', err)
-      }
-
-      // No subtitles available — fall back to Whisper
-      console.warn('[YouTube] Auto-subs failed. Falling back to Whisper transcription...')
-      return await transcribeWithWhisper(url)
-    }
-
-    // Instagram — check if whisper is available first
-    const whisperCheck = await execPromise('which whisper').catch(() => null)
-    if (!whisperCheck) {
-      console.warn('[Instagram] Whisper not installed, skipping transcript. Run: pip install openai-whisper --break-system-packages')
-      return ''
-    }
-
-    return await transcribeWithWhisper(url)
-  } catch (error) {
-    console.error(`[${source}] Transcript error:`, error)
-    return '' // Always return empty string, never throw
-  }
-}
-
-async function transcribeWithWhisper(url: string): Promise<string> {
-  const tmpFile = `/tmp/audio_${Date.now()}.mp3`
-  try {
-    console.log('[Whisper] Downloading audio...')
-    const cookiesPath = path.resolve(process.cwd(), 'cookies.txt')
-    await execPromise(`yt-dlp -x --audio-format mp3 --js-runtimes node --remote-components ejs:github --cookies "${cookiesPath}" -o "${tmpFile}" "${url}"`, { timeout: 120_000 })
-    
-    console.log('[Whisper] Audio downloaded. Running Whisper AI (this takes a minute)...')
-    const whisperBin = process.env.WHISPER_PATH || `${process.env.HOME}/.local/bin/whisper`
-    await execPromise(`"${whisperBin}" "${tmpFile}" --model base --language en --output_format json --output_dir /tmp`, { timeout: 180_000 })
-
-    const jsonFile = tmpFile.replace('.mp3', '.json')
-    const result = JSON.parse(fs.readFileSync(jsonFile, 'utf-8'))
-
-    ;[tmpFile, jsonFile].forEach(f => fs.existsSync(f) && fs.unlinkSync(f))
-    console.log('[Whisper] Transcription complete!')
-    return result.segments.map((s: any) => s.text).join(' ').trim()
-  } catch (err) {
-    console.error('[Whisper] Error:', err) // This will tell us exactly why it failed
-    ;[tmpFile, tmpFile.replace('.mp3', '.json')].forEach(f => fs.existsSync(f) && fs.unlinkSync(f))
-    throw err
-  }
-}
+// ── Main Analyze Function ─────────────────────────────────────────
 
 export async function analyzeVideos({ youtubeUrl, instagramUrl, sessionId }: {
   youtubeUrl: string
@@ -292,7 +338,6 @@ async function extractTranscriptsInBackground(
       existing.youtube.transcript = ytTranscript
       existing.instagram.transcript = igTranscript
 
-      // ── Proper chunking (using the text splitter) ───────────
       const { createTextSplitter } = await import('../rag/textChunker')
       const splitter = createTextSplitter()
 
@@ -324,7 +369,6 @@ async function extractTranscriptsInBackground(
         `[Analyze] Transcripts saved to session ${sessionId} (A:${ytChunks.length} chunks, B:${igChunks.length} chunks)`
       )
 
-      // ── Index in vector store for RAG ───────────────────────
       await indexSession(
         sessionId,
         ytTranscript,
@@ -333,7 +377,7 @@ async function extractTranscriptsInBackground(
         instagramMeta
       )
 
-      console.log(`[Analyze] Session ${sessionId} ready for AI chat`)
+      console.log(`[Analyze]  Session ${sessionId} ready for AI chat`)
     }
   } catch (err) {
     console.error('[Analyze] Background transcript error:', err)

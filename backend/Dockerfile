@@ -1,19 +1,16 @@
 FROM node:22
 
-# Install Python, pip, ffmpeg, AND C++ compilers (build-essential is required for openai-whisper)
+# Install Python, pip, ffmpeg
 RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     ffmpeg \
-    build-essential \
-    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python tools required by the project
 RUN pip3 install --break-system-packages \
     yt-dlp \
-    instaloader \
-    openai-whisper
+    instaloader
 
 # Set working directory
 WORKDIR /app
