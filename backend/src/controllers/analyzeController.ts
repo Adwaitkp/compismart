@@ -22,7 +22,8 @@ export async function analyzeController(req: Request, res: Response): Promise<vo
       sessionId: sessionId ?? crypto.randomUUID(),
     })
 
-    res.json(analysis)
+    console.log('[Controller] Analysis result:', JSON.stringify(analysis).slice(0, 200))
+    res.status(200).json(analysis)
   } catch (error) {
     console.error('[Controller] Analyze error:', error)
     res.status(500).json({

@@ -62,6 +62,10 @@ async function extractMetadata(url: string, source: 'youtube' | 'instagram'): Pr
     const videoId = getYouTubeId(url)
     if (!videoId) throw new Error('Invalid YouTube URL')
 
+    if (!env.youtubeApiKey) {
+      throw new Error('YouTube API key not configured. Set YOUTUBE_API_KEY environment variable.')
+    }
+
     const youtube = google.youtube({ version: 'v3', auth: env.youtubeApiKey })
 
     // Fetch Video Stats & Snippet
