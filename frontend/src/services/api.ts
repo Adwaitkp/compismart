@@ -31,7 +31,17 @@ export async function analyzeComparisons(params: AnalyzeParams): Promise<Analysi
     throw new Error(fallback || 'Failed to analyze videos.')
   }
 
-  return response.json() as Promise<AnalysisResponse>
+  const rawBody = await response.text()
+
+  if (!rawBody.trim()) {
+    throw new Error('Analyze request succeeded but returned an empty response body.')
+  }
+
+  try {
+    return JSON.parse(rawBody) as AnalysisResponse
+  } catch {
+    throw new Error(`Analyze request returned invalid JSON: ${rawBody.slice(0, 200)}`)
+  }
 }
 
 export async function* streamChat(
