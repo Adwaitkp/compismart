@@ -1,6 +1,6 @@
 FROM node:22
 
-# Install Python, pip, ffmpeg
+# Install Python, pip, and ffmpeg for yt-dlp / Instaloader processing
 RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
@@ -28,7 +28,7 @@ COPY . .
 RUN npm run build
 
 # Expose application port
-EXPOSE 5000
+EXPOSE 4000
 
 # Start application
 CMD ["npm", "start"]

@@ -26,11 +26,13 @@ function formatCompactNumber(value: number): string {
   return `${n}`
 }
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://compismart-production.up.railway.app/api'
+
 function getThumbnailUrl(thumbnailUrl: string, source: string): string {
   if (!thumbnailUrl) return '' // Don't proxy empty URLs
   
   if (source === 'instagram') {
-    return `http://localhost:5000/api/proxy-image?url=${encodeURIComponent(thumbnailUrl)}`
+    return `${API_BASE}/proxy-image?url=${encodeURIComponent(thumbnailUrl)}`
   }
   
   return thumbnailUrl
