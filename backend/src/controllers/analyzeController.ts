@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express'
-import { analyzeVideos } from '../services/analyzeService'
+import { analyzeVideos } from '../services/analyzeService.js'
 
 export async function analyzeController(req: Request, res: Response): Promise<void> {
   const { youtubeUrl, instagramUrl, sessionId } = req.body as {

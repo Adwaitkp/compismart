@@ -194,10 +194,10 @@ async function transcribeWithDeepgram(url: string): Promise<string> {
 
     const transcriptionResult = result as any
     const transcript = transcriptionResult.results?.channels?.[0]?.alternatives?.[0]?.transcript || ''
-    console.log('[Deepgram] ✅ Transcription complete!')
+    console.log('[Deepgram]  Transcription complete!')
     return transcript
   } catch (err) {
-    console.error('[Deepgram] ❌ Error:', err)
+    console.error('[Deepgram]  Error:', err)
     throw err
   } finally {
     if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile)
